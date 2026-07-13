@@ -9,6 +9,7 @@
 import yfinance as yf
 import requests
 import pandas as pd
+import numpy as np          # ← BUNU EKLE
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
