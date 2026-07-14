@@ -597,10 +597,8 @@ def main():
         with st.expander("Yeni İndikatör", expanded=False):
             yeni_isim = st.text_input("İndikatör Adı", placeholder="ornek_indikator", key="custom_name")
 
-            # Üçlü tırnak sorununu önlemek için f-string kullanma
-            ornek_kod = 'def my_indicator(df, period=14):
-    close = df['Close']
-    return close.rolling(window=period).mean()'
+            # Üçlü tırnak sorununu önlemek için escape kullan
+            ornek_kod = "def my_indicator(df, period=14):\n    close = df['Close']\n    return close.rolling(window=period).mean()"
 
             yeni_kod = st.text_area("Python Kodu", height=200, value=ornek_kod, key="custom_code")
             col_a, col_b = st.columns(2)
