@@ -6,7 +6,7 @@ import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
 from typing import Optional, Dict, List
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 import time
 import json
 import plotly.graph_objects as go
@@ -48,7 +48,7 @@ def init_session_state():
 init_session_state()
 
 # ============================================
-# VARLIK KÜTÜPHANESİ - Önerilen Varlıklar
+# VARLIK KÜTÜPHANESİ
 # ============================================
 VARLIK_KUTUPHANESI = {
     "BIST 100": [
@@ -261,6 +261,165 @@ class TwelveDataKaynagi(VeriKaynagi):
         except Exception as e:
             raise Exception(f"Twelve Data hatası: {e}")
 
+# ============================================
+# 5. INVESTING.COM VERİ KAYNAĞI
+# ============================================
+class InvestingComKaynagi(VeriKaynagi):
+    """
+    Investing.com - Web scraping ile veri çeker.
+    Güçlü anti-bot koruması var, bu yüzden yedek kaynak olarak kullanılır.
+    """
+
+    def __init__(self):
+        self.isim = "Investing.com"
+        self.gecikme = "Gerçek zamanlı / 1dk gecikme"
+        self.base_url = "https://www.investing.com"
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "application/json, text/plain, */*",
+            "Accept-Language": "en-US,en;q=0.9,tr;q=0.8",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": "https://www.investing.com/"
+        }
+        # Sembol eşleme tablosu (investing.com pair ID'leri)
+        self.pair_ids = {
+            # BIST 100
+            "THYAO.IS": "43687", "GARAN.IS": "43696", "ASELS.IS": "43680",
+            "KCHOL.IS": "43702", "SISE.IS": "43691", "BIMAS.IS": "43683",
+            "EREGL.IS": "43688", "TUPRS.IS": "43695", "SAHOL.IS": "43690",
+            "AKBNK.IS": "43678", "YKBNK.IS": "43700", "ISCTR.IS": "43698",
+            "KRDMD.IS": "43701", "PETKM.IS": "43689", "TOASO.IS": "43693",
+            "ARCLK.IS": "43681", "HEKTS.IS": "43697", "KOZAA.IS": "43703",
+            "PGSUS.IS": "43692", "TCELL.IS": "43694",
+            # Hisse ABD
+            "AAPL": "6408", "MSFT": "252", "GOOGL": "6369", "AMZN": "6435",
+            "TSLA": "13994", "META": "14240", "NVDA": "13842", "NFLX": "13063",
+            "AMD": "8274", "INTC": "251", "IBM": "8088", "DIS": "250",
+            "BA": "238", "JPM": "244", "V": "13916", "MA": "13917",
+            "WMT": "211", "KO": "9593", "PEP": "242", "PFE": "131",
+            # Kripto
+            "BTC-USD": "945629", "ETH-USD": "997650", "BNB-USD": "1158819",
+            "SOL-USD": "1177189", "XRP-USD": "1118146", "ADA-USD": "1072724",
+            "DOGE-USD": "1098080", "AVAX-USD": "1147622", "DOT-USD": "1137848",
+            "MATIC-USD": "1131142", "LINK-USD": "1121700", "LTC-USD": "1061443",
+            # Emtia
+            "GC=F": "8830", "SI=F": "8836", "CL=F": "8849",
+            "BZ=F": "8862", "NG=F": "8861", "HG=F": "8831",
+            "PL=F": "8910", "PA=F": "8911", "ZC=F": "8918",
+            "ZW=F": "8917", "ZS=F": "8916", "KC=F": "8832",
+            # Forex
+            "EURUSD=X": "1", "GBPUSD=X": "2", "USDJPY=X": "3",
+            "USDCHF=X": "4", "AUDUSD=X": "5", "USDCAD=X": "7",
+            "EURGBP=X": "6", "EURJPY=X": "9", "GBPJPY=X": "11",
+            "USDTRY=X": "18", "EURTRY=X": "37", "GBPTRY=X": "36",
+            # Endeks
+            "XU100.IS": "178", "^GSPC": "166", "^DJI": "169",
+            "^IXIC": "14958", "^FTSE": "27", "^N225": "178",
+            "^GDAXI": "172", "^FCHI": "167", "^HSI": "179",
+        }
+
+    def destekler(self, sembol: str) -> bool:
+        return sembol in self.pair_ids
+
+    def veri_cek(self, sembol: str, periyot: str = "1d",
+                 baslangic: Optional[str] = None,
+                 bitis: Optional[str] = None) -> VeriPaketi:
+
+        if sembol not in self.pair_ids:
+            raise ValueError(f"Investing.com: {sembol} için pair ID bulunamadı")
+
+        pair_id = self.pair_ids[sembol]
+
+        # Periyod mapping
+        period_map = {
+            "1d": {"period": 86400, "interval": 86400},      # Günlük
+            "1h": {"period": 86400, "interval": 3600},       # Saatlik
+            "15m": {"period": 86400, "interval": 900},       # 15 dk
+            "5m": {"period": 86400, "interval": 300},        # 5 dk
+            "1m": {"period": 86400, "interval": 60},         # 1 dk
+        }
+
+        p = period_map.get(periyot, period_map["1d"])
+
+        try:
+            # Investing.com chart data endpoint
+            url = f"{self.base_url}/instruments/Service/GetTechincalData"
+
+            payload = {
+                "pairID": pair_id,
+                "period": p["period"],
+                "viewType": "normal"
+            }
+
+            response = requests.post(url, data=payload, headers=self.headers, timeout=15)
+
+            if response.status_code != 200:
+                # Alternatif endpoint dene
+                url2 = f"{self.base_url}/instruments/HistoricalDataAjax"
+                payload2 = {
+                    "curr_id": pair_id,
+                    "smlID": "1165404",
+                    "header": "Historical Data",
+                    "st_date": "",
+                    "end_date": "",
+                    "interval_sec": p["interval"],
+                    "sort_col": "date",
+                    "sort_ord": "DESC",
+                    "action": "historical_data"
+                }
+                response = requests.post(url2, data=payload2, headers=self.headers, timeout=15)
+
+                if response.status_code != 200:
+                    raise Exception(f"HTTP {response.status_code}")
+
+            # HTML parse et
+            from bs4 import BeautifulSoup
+            soup = BeautifulSoup(response.text, 'html.parser')
+
+            # Tablo satırlarını bul
+            rows = soup.find_all('tr')
+
+            veriler = []
+            for row in rows[1:]:  # Header'ı atla
+                cols = row.find_all('td')
+                if len(cols) >= 6:
+                    try:
+                        tarih_str = cols[0].text.strip()
+                        fiyat = float(cols[1].text.strip().replace(',', ''))
+                        acilis = float(cols[2].text.strip().replace(',', ''))
+                        yuksek = float(cols[3].text.strip().replace(',', ''))
+                        dusuk = float(cols[4].text.strip().replace(',', ''))
+                        hacim = cols[5].text.strip().replace(',', '').replace('K', '000').replace('M', '000000')
+                        hacim = float(hacim) if hacim else 0
+
+                        veriler.append({
+                            'Date': tarih_str,
+                            'Open': acilis,
+                            'High': yuksek,
+                            'Low': dusuk,
+                            'Close': fiyat,
+                            'Volume': hacim
+                        })
+                    except:
+                        continue
+
+            if not veriler:
+                raise ValueError("Investing.com'dan veri alınamadı (tablo bulunamadı)")
+
+            df = pd.DataFrame(veriler)
+            df['Date'] = pd.to_datetime(df['Date'])
+            df.set_index('Date', inplace=True)
+            df = df.sort_index()
+
+            return VeriPaketi(
+                sembol=sembol, kaynak=self.isim, zaman_dilimi=periyot,
+                veri=df, gecikme="Gerçek zamanlı / 1dk gecikme", son_guncelleme=datetime.now()
+            )
+
+        except Exception as e:
+            raise Exception(f"Investing.com hatası: {e}")
+
+
 class MockVeriKaynagi(VeriKaynagi):
     def __init__(self, seed: int = 42):
         self.isim = "Mock Veri"
@@ -327,42 +486,99 @@ class AkilliVeriKoordinatoru:
         raise Exception("Tüm veri kaynakları başarısız oldu!")
 
 # ============================================
-# ANLIK FİYAT ÇEKME
+# ANLIK FİYAT ÇEKME (ÇOKLU KAYNAK)
 # ============================================
 @st.cache_data(ttl=60)
-def anlik_fiyat_cek(sembol: str) -> dict:
-    """Sembolün anlık fiyat bilgilerini çeker."""
+def anlik_fiyat_cek(sembol: str, alpha_key: str = "", twelve_key: str = "") -> dict:
+    """Sembolün anlık fiyat bilgilerini çeker - önce Yahoo, sonra alternatifler."""
+    hatalar = []
+
+    # 1. Yahoo Finance dene
     try:
         ticker = yf.Ticker(sembol)
         info = ticker.info
         hist = ticker.history(period="2d")
 
-        if hist.empty or len(hist) < 1:
-            return {"hata": "Veri bulunamadı"}
+        if not hist.empty and len(hist) >= 1:
+            son_kapanis = hist['Close'].iloc[-1]
+            onceki_kapanis = hist['Close'].iloc[-2] if len(hist) > 1 else son_kapanis
+            degisim = son_kapanis - onceki_kapanis
+            degisim_yuzde = (degisim / onceki_kapanis) * 100 if onceki_kapanis != 0 else 0
 
-        son_kapanis = hist['Close'].iloc[-1]
-        onceki_kapanis = hist['Close'].iloc[-2] if len(hist) > 1 else son_kapanis
-        degisim = son_kapanis - onceki_kapanis
-        degisim_yuzde = (degisim / onceki_kapanis) * 100 if onceki_kapanis != 0 else 0
-
-        return {
-            "fiyat": son_kapanis,
-            "degisim": degisim,
-            "degisim_yuzde": degisim_yuzde,
-            "hacim": int(hist['Volume'].iloc[-1]) if 'Volume' in hist.columns else 0,
-            "yuksek": hist['High'].iloc[-1],
-            "dusuk": hist['Low'].iloc[-1],
-            "hata": None
-        }
+            return {
+                "fiyat": son_kapanis,
+                "degisim": degisim,
+                "degisim_yuzde": degisim_yuzde,
+                "hacim": int(hist['Volume'].iloc[-1]) if 'Volume' in hist.columns else 0,
+                "yuksek": hist['High'].iloc[-1],
+                "dusuk": hist['Low'].iloc[-1],
+                "kaynak": "Yahoo Finance",
+                "hata": None
+            }
     except Exception as e:
-        return {"hata": str(e)}
+        hatalar.append(f"Yahoo: {e}")
+
+    # 2. Twelve Data dene (varsa)
+    if twelve_key:
+        try:
+            url = f"https://api.twelvedata.com/quote?symbol={sembol}&apikey={twelve_key}"
+            response = requests.get(url, timeout=5)
+            data = response.json()
+
+            if "close" in data:
+                fiyat = float(data["close"])
+                onceki = float(data.get("previous_close", fiyat))
+                degisim = fiyat - onceki
+                degisim_yuzde = (degisim / onceki) * 100 if onceki != 0 else 0
+
+                return {
+                    "fiyat": fiyat,
+                    "degisim": degisim,
+                    "degisim_yuzde": degisim_yuzde,
+                    "hacim": int(data.get("volume", 0)),
+                    "yuksek": float(data.get("high", fiyat)),
+                    "dusuk": float(data.get("low", fiyat)),
+                    "kaynak": "Twelve Data",
+                    "hata": None
+                }
+        except Exception as e:
+            hatalar.append(f"Twelve: {e}")
+
+    # 3. Alpha Vantage dene (varsa)
+    if alpha_key:
+        try:
+            url = f"https://www.alphavantage.co/query?function=GLOBAL_QUOTE&symbol={sembol}&apikey={alpha_key}"
+            response = requests.get(url, timeout=5)
+            data = response.json()
+
+            if "Global Quote" in data and data["Global Quote"]:
+                gq = data["Global Quote"]
+                fiyat = float(gq["05. price"])
+                onceki = float(gq["08. previous close"])
+                degisim = fiyat - onceki
+                degisim_yuzde = float(gq["10. change percent"].replace('%', ''))
+
+                return {
+                    "fiyat": fiyat,
+                    "degisim": degisim,
+                    "degisim_yuzde": degisim_yuzde,
+                    "hacim": int(gq["06. volume"]),
+                    "yuksek": float(gq["03. high"]),
+                    "dusuk": float(gq["04. low"]),
+                    "kaynak": "Alpha Vantage",
+                    "hata": None
+                }
+        except Exception as e:
+            hatalar.append(f"Alpha: {e}")
+
+    return {"hata": f"Tüm kaynaklar başarısız: {'; '.join(hatalar)}"}
 
 # ============================================
 # STREAMLIT UI
 # ============================================
 def main():
     st.title("📊 Çok Kaynaklı Finans Veri Ajanı")
-    st.markdown("Yahoo Finance, Alpha Vantage, Twelve Data ve Mock veri kaynaklarını kullanır.")
+    st.markdown("**Yahoo Finance → Investing.com → Twelve Data → Alpha Vantage → Mock** sırasıyla en güvenilir veriyi bulur.")
 
     # ==================== SIDEBAR ====================
     with st.sidebar:
@@ -450,7 +666,6 @@ def main():
     aktif_varliklar = [v for v in st.session_state.takip_listesi if v.get("aktif", True)]
 
     if aktif_varliklar:
-        # 4 sütunlu kart düzeni
         cols_per_row = 4
         rows = [aktif_varliklar[i:i+cols_per_row] for i in range(0, len(aktif_varliklar), cols_per_row)]
 
@@ -459,14 +674,17 @@ def main():
             for col, varlik in zip(cols, row):
                 with col:
                     with st.spinner(f"⏳ {varlik['sembol']}..."):
-                        veri = anlik_fiyat_cek(varlik["sembol"])
+                        veri = anlik_fiyat_cek(varlik["sembol"], alpha_key, twelve_key)
 
                     if veri.get("hata"):
-                        st.error(f"❌ {varlik['sembol']}: {veri['hata']}")
+                        st.error(f"❌ {varlik['sembol']}: Veri alınamadı")
+                        with st.expander("Detay"):
+                            st.code(veri["hata"])
                     else:
                         fiyat = veri["fiyat"]
                         degisim = veri["degisim"]
                         degisim_yuzde = veri["degisim_yuzde"]
+                        kaynak = veri.get("kaynak", "Bilinmiyor")
 
                         renk = "🟢" if degisim >= 0 else "🔴"
                         isaret = "+" if degisim >= 0 else ""
@@ -477,7 +695,7 @@ def main():
                             delta=f"{isaret}{degisim_yuzde:.2f}% ({isaret}{degisim:,.4f})" if fiyat < 1 else f"{isaret}{degisim_yuzde:.2f}% ({isaret}{degisim:,.2f})",
                             delta_color="normal"
                         )
-                        st.caption(f"Hacim: {veri['hacim']:,} | Yüksek: {veri['yuksek']:.2f} | Düşük: {veri['dusuk']:.2f}")
+                        st.caption(f"📡 {kaynak} | Hacim: {veri['hacim']:,} | Yüksek: {veri['yuksek']:.2f} | Düşük: {veri['dusuk']:.2f}")
     else:
         st.info("📭 Takip listeniz boş. Sidebar'dan varlık ekleyin.")
 
@@ -486,7 +704,6 @@ def main():
     # --- GRAFİK BÖLÜMÜ ---
     st.subheader("📊 Detaylı Grafik")
 
-    # Sembol seçimi (takip listesinden)
     secenekler = [(v["sembol"], f"{v['isim']} ({v['sembol']})") for v in st.session_state.takip_listesi]
     if secenekler:
         secili = st.selectbox("Grafik için sembol seç", secenekler, format_func=lambda x: x[1])
@@ -495,15 +712,18 @@ def main():
         secili_sembol = st.text_input("Sembol girin (örn: AAPL)", value="AAPL")
 
     if st.button("🚀 Grafiği Çiz", type="primary", use_container_width=True):
-        with st.spinner("Veri çekiliyor..."):
+        with st.spinner("Tüm kaynaklar deneniyor..."):
             koordinator = AkilliVeriKoordinatoru()
 
-            if twelve_key:
-                koordinator.kaynak_ekle(TwelveDataKaynagi(twelve_key), 1)
-            if alpha_key:
-                koordinator.kaynak_ekle(AlphaVantageKaynagi(alpha_key), 2)
+            # ÖNCELİK SIRASI: Investing.com → Twelve Data → Alpha Vantage → Yahoo → Mock
+            koordinator.kaynak_ekle(InvestingComKaynagi(), 1)
 
-            koordinator.kaynak_ekle(YahooFinanceKaynagi(), 3)
+            if twelve_key:
+                koordinator.kaynak_ekle(TwelveDataKaynagi(twelve_key), 2)
+            if alpha_key:
+                koordinator.kaynak_ekle(AlphaVantageKaynagi(alpha_key), 3)
+
+            koordinator.kaynak_ekle(YahooFinanceKaynagi(), 4)
 
             if use_mock:
                 koordinator.kaynak_ekle(MockVeriKaynagi(), 99)
@@ -521,9 +741,7 @@ def main():
 
                 st.success(f"✅ {paket.kaynak} üzerinden veri alındı!")
 
-                # ==================== GRAFİK ÇİZİMİ (ZOOM + İNDİKATÖRLER) ====================
-
-                # Alt grafik sayısını belirle
+                # ==================== GRAFİK ÇİZİMİ ====================
                 alt_grafikler = []
                 if st.session_state.indikatorler["rsi"]["aktif"]:
                     alt_grafikler.append("rsi")
@@ -541,7 +759,7 @@ def main():
                     subplot_titles=[f"{secili_sembol} - {periyot}"] + alt_grafikler
                 )
 
-                # --- ANA GRAFİK: Candlestick ---
+                # Candlestick
                 fig.add_trace(go.Candlestick(
                     x=df.index,
                     open=df['Open'],
@@ -553,10 +771,9 @@ def main():
                     decreasing_line_color='#ef5350'
                 ), row=1, col=1)
 
-                # --- İNDİKATÖRLER ---
+                # İndikatörler
                 close = df['Close']
 
-                # SMA 20
                 if st.session_state.indikatorler["sma_20"]["aktif"]:
                     sma20 = sma(close, st.session_state.indikatorler["sma_20"]["period"])
                     fig.add_trace(go.Scatter(
@@ -565,7 +782,6 @@ def main():
                         line=dict(color=st.session_state.indikatorler["sma_20"]["color"], width=1.5)
                     ), row=1, col=1)
 
-                # SMA 50
                 if st.session_state.indikatorler["sma_50"]["aktif"]:
                     sma50 = sma(close, st.session_state.indikatorler["sma_50"]["period"])
                     fig.add_trace(go.Scatter(
@@ -574,7 +790,6 @@ def main():
                         line=dict(color=st.session_state.indikatorler["sma_50"]["color"], width=1.5)
                     ), row=1, col=1)
 
-                # EMA 12
                 if st.session_state.indikatorler["ema_12"]["aktif"]:
                     ema12 = ema(close, st.session_state.indikatorler["ema_12"]["period"])
                     fig.add_trace(go.Scatter(
@@ -583,7 +798,6 @@ def main():
                         line=dict(color=st.session_state.indikatorler["ema_12"]["color"], width=1.5)
                     ), row=1, col=1)
 
-                # Bollinger Bands
                 if st.session_state.indikatorler["bollinger"]["aktif"]:
                     ust, orta, alt = bollinger(
                         close,
@@ -608,7 +822,6 @@ def main():
                         showlegend=True
                     ), row=1, col=1)
 
-                # Hacim
                 if 'Volume' in df.columns:
                     fig.add_trace(go.Bar(
                         x=df.index, y=df['Volume'],
@@ -616,10 +829,9 @@ def main():
                         showlegend=True
                     ), row=1, col=1)
 
-                # --- ALT GRAFİKLER ---
+                # Alt grafikler
                 current_row = 2
 
-                # RSI
                 if st.session_state.indikatorler["rsi"]["aktif"]:
                     rsi_val = rsi(close, st.session_state.indikatorler["rsi"]["period"])
                     fig.add_trace(go.Scatter(
@@ -632,7 +844,6 @@ def main():
                     fig.update_yaxes(range=[0, 100], row=current_row, col=1)
                     current_row += 1
 
-                # MACD
                 if st.session_state.indikatorler["macd"]["aktif"]:
                     macd_line, signal_line, histogram = macd(
                         close,
@@ -657,7 +868,7 @@ def main():
                     ), row=current_row, col=1)
                     current_row += 1
 
-                # --- ZOOM & LAYOUT AYARLARI ---
+                # Layout
                 fig.update_layout(
                     template="plotly_dark",
                     height=600 + (200 * len(alt_grafikler)),
@@ -714,11 +925,9 @@ def main():
                     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
                 })
 
-                # Ham veri tablosu
                 with st.expander("📋 Ham Veriyi Gör"):
                     st.dataframe(df.tail(50), use_container_width=True)
 
-                # İstatistikler
                 with st.expander("📈 İstatistikler"):
                     st.write(df.describe())
 
@@ -729,7 +938,7 @@ def main():
                 st.info("💡 Yahoo Finance üzerinden denemek için API key girmeden tekrar deneyin.")
 
     st.divider()
-    st.caption("🔧 Çok Kaynaklı Finans Veri Ajanı | Streamlit + Python")
+    st.caption("🔧 Çok Kaynaklı Finans Veri Ajanı | Streamlit + Python | v2.0")
 
 if __name__ == "__main__":
     main()
