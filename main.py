@@ -5,13 +5,13 @@ import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
 from datetime import datetime, timedelta
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Tuple
 from dataclasses import dataclass
 import time
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-st.set_page_config(page_title="Finans Veri Ajanı", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Finans Veri Ajani", page_icon="📊", layout="wide")
 
 # ============================================
 # SESSION STATE
@@ -20,15 +20,31 @@ def init_session_state():
     if "takip_listesi" not in st.session_state:
         st.session_state.takip_listesi = [
             {"sembol": "AAPL", "isim": "Apple", "tur": "Hisse (ABD)", "aktif": True},
-            {"sembol": "THYAO.IS", "isim": "Türk Hava Yolları", "tur": "BIST 100", "aktif": True},
+            {"sembol": "MSFT", "isim": "Microsoft", "tur": "Hisse (ABD)", "aktif": True},
+            {"sembol": "GOOGL", "isim": "Alphabet", "tur": "Hisse (ABD)", "aktif": True},
+            {"sembol": "TSLA", "isim": "Tesla", "tur": "Hisse (ABD)", "aktif": True},
+            {"sembol": "NVDA", "isim": "NVIDIA", "tur": "Hisse (ABD)", "aktif": True},
+            {"sembol": "THYAO.IS", "isim": "Turk Hava Yollari", "tur": "BIST 100", "aktif": True},
             {"sembol": "GARAN.IS", "isim": "Garanti BBVA", "tur": "BIST 100", "aktif": True},
+            {"sembol": "ASELS.IS", "isim": "Aselsan", "tur": "BIST 100", "aktif": True},
+            {"sembol": "KCHOL.IS", "isim": "Koc Holding", "tur": "BIST 100", "aktif": True},
+            {"sembol": "SISE.IS", "isim": "Sisecam", "tur": "BIST 100", "aktif": True},
+            {"sembol": "BIMAS.IS", "isim": "BIM", "tur": "BIST 100", "aktif": True},
+            {"sembol": "EREGL.IS", "isim": "Eregli Demir Celik", "tur": "BIST 100", "aktif": True},
             {"sembol": "BTC-USD", "isim": "Bitcoin", "tur": "Kripto", "aktif": True},
             {"sembol": "ETH-USD", "isim": "Ethereum", "tur": "Kripto", "aktif": True},
-            {"sembol": "GC=F", "isim": "Altın", "tur": "Emtia", "aktif": True},
-            {"sembol": "CL=F", "isim": "Ham Petrol", "tur": "Emtia", "aktif": True},
+            {"sembol": "SOL-USD", "isim": "Solana", "tur": "Kripto", "aktif": True},
+            {"sembol": "BNB-USD", "isim": "Binance Coin", "tur": "Kripto", "aktif": True},
+            {"sembol": "GC=F", "isim": "Altin", "tur": "Emtia", "aktif": True},
+            {"sembol": "SI=F", "isim": "Gumus", "tur": "Emtia", "aktif": True},
+            {"sembol": "CL=F", "isim": "Ham Petrol (WTI)", "tur": "Emtia", "aktif": True},
+            {"sembol": "BZ=F", "isim": "Brent Petrol", "tur": "Emtia", "aktif": True},
             {"sembol": "EURUSD=X", "isim": "EUR/USD", "tur": "Forex", "aktif": True},
             {"sembol": "USDTRY=X", "isim": "USD/TRY", "tur": "Forex", "aktif": True},
+            {"sembol": "GBPUSD=X", "isim": "GBP/USD", "tur": "Forex", "aktif": True},
             {"sembol": "XU100.IS", "isim": "BIST 100 Endeks", "tur": "Endeks", "aktif": True},
+            {"sembol": "^GSPC", "isim": "S&P 500", "tur": "Endeks", "aktif": True},
+            {"sembol": "^IXIC", "isim": "NASDAQ", "tur": "Endeks", "aktif": True},
         ]
     if "indikatorler" not in st.session_state:
         st.session_state.indikatorler = {
@@ -43,21 +59,25 @@ def init_session_state():
         st.session_state.custom_indikatorler = {}
     if "seviyeler" not in st.session_state:
         st.session_state.seviyeler = {}
+    if "donusum_noktalari" not in st.session_state:
+        st.session_state.donusum_noktalari = {}
 
 init_session_state()
 
 # ============================================
-# VARLIK KÜTÜPHANESİ
+# GENISLETILMIS VARLIK KUTUPHANESI
 # ============================================
 VARLIK_KUTUPHANESI = {
     "BIST 100": [
-        ("THYAO.IS", "Türk Hava Yolları"), ("GARAN.IS", "Garanti BBVA"), ("ASELS.IS", "Aselsan"),
-        ("KCHOL.IS", "Koç Holding"), ("SISE.IS", "Şişecam"), ("BIMAS.IS", "BİM"),
-        ("EREGL.IS", "Ereğli Demir Çelik"), ("TUPRS.IS", "Tüpraş"), ("SAHOL.IS", "Sabancı Holding"),
-        ("AKBNK.IS", "Akbank"), ("YKBNK.IS", "Yapı Kredi"), ("ISCTR.IS", "İş Bankası"),
-        ("KRDMD.IS", "Kardemir"), ("PETKM.IS", "Petkim"), ("TOASO.IS", "Tofaş"),
-        ("ARCLK.IS", "Arçelik"), ("HEKTS.IS", "Hektaş"), ("KOZAA.IS", "Koza Altın"),
-        ("PGSUS.IS", "Pegasus"), ("TCELL.IS", "Turkcell"),
+        ("THYAO.IS", "Turk Hava Yollari"), ("GARAN.IS", "Garanti BBVA"), ("ASELS.IS", "Aselsan"),
+        ("KCHOL.IS", "Koc Holding"), ("SISE.IS", "Sisecam"), ("BIMAS.IS", "BIM"),
+        ("EREGL.IS", "Eregli Demir Celik"), ("TUPRS.IS", "Tupras"), ("SAHOL.IS", "Sabanci Holding"),
+        ("AKBNK.IS", "Akbank"), ("YKBNK.IS", "Yapi Kredi"), ("ISCTR.IS", "Is Bankasi"),
+        ("KRDMD.IS", "Kardemir"), ("PETKM.IS", "Petkim"), ("TOASO.IS", "Tofas"),
+        ("ARCLK.IS", "Arcelik"), ("HEKTS.IS", "Hektas"), ("KOZAA.IS", "Koza Altin"),
+        ("PGSUS.IS", "Pegasus"), ("TCELL.IS", "Turkcell"), ("SASA.IS", "Sasa Polyester"),
+        ("KONTR.IS", "Kontrolmatik"), ("SMRTG.IS", "Smart Guc"), ("ALARK.IS", "Alarko"),
+        ("ENKAI.IS", "Enka Insaat"), ("DOHOL.IS", "Dogus Holding"),
     ],
     "Hisse (ABD)": [
         ("AAPL", "Apple"), ("MSFT", "Microsoft"), ("GOOGL", "Alphabet"), ("AMZN", "Amazon"),
@@ -65,34 +85,41 @@ VARLIK_KUTUPHANESI = {
         ("AMD", "AMD"), ("INTC", "Intel"), ("IBM", "IBM"), ("DIS", "Disney"),
         ("BA", "Boeing"), ("JPM", "JPMorgan"), ("V", "Visa"), ("MA", "Mastercard"),
         ("WMT", "Walmart"), ("KO", "Coca-Cola"), ("PEP", "PepsiCo"), ("PFE", "Pfizer"),
+        ("GOOG", "Google"), ("CSCO", "Cisco"), ("NKE", "Nike"), ("MCD", "McDonalds"),
+        ("ADBE", "Adobe"), ("CRM", "Salesforce"), ("PYPL", "PayPal"),
     ],
     "Kripto": [
         ("BTC-USD", "Bitcoin"), ("ETH-USD", "Ethereum"), ("BNB-USD", "Binance Coin"),
         ("SOL-USD", "Solana"), ("XRP-USD", "Ripple"), ("ADA-USD", "Cardano"),
         ("DOGE-USD", "Dogecoin"), ("AVAX-USD", "Avalanche"), ("DOT-USD", "Polkadot"),
         ("MATIC-USD", "Polygon"), ("LINK-USD", "Chainlink"), ("LTC-USD", "Litecoin"),
+        ("SHIB-USD", "Shiba Inu"), ("TRX-USD", "TRON"), ("UNI-USD", "Uniswap"),
+        ("ATOM-USD", "Cosmos"), ("ETC-USD", "Ethereum Classic"),
     ],
     "Emtia": [
-        ("GC=F", "Altın"), ("SI=F", "Gümüş"), ("CL=F", "Ham Petrol (WTI)"),
-        ("BZ=F", "Brent Petrol"), ("NG=F", "Doğalgaz"), ("HG=F", "Bakır"),
-        ("PL=F", "Platin"), ("PA=F", "Paladyum"), ("ZC=F", "Mısır"),
-        ("ZW=F", "Buğday"), ("ZS=F", "Soya Fasulyesi"), ("KC=F", "Kahve"),
+        ("GC=F", "Altin"), ("SI=F", "Gumus"), ("CL=F", "Ham Petrol (WTI)"),
+        ("BZ=F", "Brent Petrol"), ("NG=F", "Dogalgaz"), ("HG=F", "Bakir"),
+        ("PL=F", "Platin"), ("PA=F", "Palladyum"), ("ZC=F", "Misir"),
+        ("ZW=F", "Bugday"), ("ZS=F", "Soya Fasulyesi"), ("KC=F", "Kahve"),
+        ("CT=F", "Pamuk"), ("SB=F", "Seker"), ("CC=F", "Kakao"),
     ],
     "Forex": [
         ("EURUSD=X", "EUR/USD"), ("GBPUSD=X", "GBP/USD"), ("USDJPY=X", "USD/JPY"),
         ("USDCHF=X", "USD/CHF"), ("AUDUSD=X", "AUD/USD"), ("USDCAD=X", "USD/CAD"),
         ("EURGBP=X", "EUR/GBP"), ("EURJPY=X", "EUR/JPY"), ("GBPJPY=X", "GBP/JPY"),
         ("USDTRY=X", "USD/TRY"), ("EURTRY=X", "EUR/TRY"), ("GBPTRY=X", "GBP/TRY"),
+        ("AUDJPY=X", "AUD/JPY"), ("CADJPY=X", "CAD/JPY"), ("CHFJPY=X", "CHF/JPY"),
     ],
     "Endeks": [
         ("XU100.IS", "BIST 100"), ("^GSPC", "S&P 500"), ("^DJI", "Dow Jones"),
         ("^IXIC", "NASDAQ"), ("^FTSE", "FTSE 100"), ("^N225", "Nikkei 225"),
         ("^GDAXI", "DAX 40"), ("^FCHI", "CAC 40"), ("^HSI", "Hang Seng"),
+        ("^VIX", "VIX"), ("^RUT", "Russell 2000"),
     ],
 }
 
 # ============================================
-# İNDİKATÖR FONKSİYONLARI
+# INDIKATOR FONKSIYONLARI
 # ============================================
 def sma(seri, period):
     return seri.rolling(window=period).mean()
@@ -121,49 +148,105 @@ def bollinger(seri, period=20, std_dev=2):
     return ust, orta, alt
 
 # ============================================
-# DÖNÜŞÜM SEVİYELERİ TESPİTİ
+# DONUSUM NOKTALARI TESPITI (YUKSELIS/DUSUS)
 # ============================================
-def donusum_seviyeleri_bul(df, sembol):
+def donusum_noktalari_bul(df: pd.DataFrame, sembol: str) -> dict:
+    """
+    Varligin grafikte yukselise gecis ve dususe gecis zamanlarini tespit eder.
+    Yerel minimum ve maksimum noktalari bulur, trend degisimlerini isaretler.
+    """
     close = df['Close']
-    donusumler = {"destekler": [], "direncler": [], "son_yukselis": None, "son_dusus": None}
+    high = df['High']
+    low = df['Low']
 
+    # Yerel ekstremumlari bul (pivot noktalari)
     window = 3
+    yukselis_noktalari = []   # Yerel minimum -> yukselis baslangici
+    dusus_noktalari = []      # Yerel maksimum -> dusus baslangici
+
     for i in range(window, len(close) - window):
-        if all(close.iloc[i] >= close.iloc[i-j] for j in range(1, window+1)) and            all(close.iloc[i] >= close.iloc[i+j] for j in range(1, window+1)):
-            donusumler["direncler"].append({"tarih": df.index[i], "fiyat": float(close.iloc[i]), "tip": "direnc"})
+        # Yerel minimum (yukselise gecis noktasi)
+        is_local_min = all(close.iloc[i] <= close.iloc[i-j] for j in range(1, window+1)) and \
+                       all(close.iloc[i] <= close.iloc[i+j] for j in range(1, window+1))
 
-        if all(close.iloc[i] <= close.iloc[i-j] for j in range(1, window+1)) and            all(close.iloc[i] <= close.iloc[i+j] for j in range(1, window+1)):
-            donusumler["destekler"].append({"tarih": df.index[i], "fiyat": float(close.iloc[i]), "tip": "destek"})
+        # Yerel maksimum (dususe gecis noktasi)
+        is_local_max = all(close.iloc[i] >= close.iloc[i-j] for j in range(1, window+1)) and \
+                       all(close.iloc[i] >= close.iloc[i+j] for j in range(1, window+1))
 
+        if is_local_min:
+            yukselis_noktalari.append({
+                "tarih": df.index[i],
+                "fiyat": float(close.iloc[i]),
+                "tip": "yukselis_baslangici",
+                "renk": "green",
+                "sembol": "arrow-up"
+            })
+
+        if is_local_max:
+            dusus_noktalari.append({
+                "tarih": df.index[i],
+                "fiyat": float(close.iloc[i]),
+                "tip": "dusus_baslangici",
+                "renk": "red",
+                "sembol": "arrow-down"
+            })
+
+    # Son donusum noktalarini belirle
+    son_donusum = None
+    if yukselis_noktalari and dusus_noktalari:
+        son_yukselis = yukselis_noktalari[-1]["tarih"]
+        son_dusus = dusus_noktalari[-1]["tarih"]
+        if son_yukselis > son_dusus:
+            son_donusum = {"tip": "yukselis", "tarih": son_yukselis}
+        else:
+            son_donusum = {"tip": "dusus", "tarih": son_dusus}
+
+    # Trend analizi
     son_10 = close.tail(10)
+    trend = "notr"
     if len(son_10) >= 5:
         ilk_5 = son_10.head(5).mean()
         son_5 = son_10.tail(5).mean()
-        if son_5 > ilk_5 * 1.01:
-            donusumler["son_yukselis"] = {"degisim_yuzde": ((son_5 - ilk_5) / ilk_5) * 100, "yon": "yukari"}
-        elif son_5 < ilk_5 * 0.99:
-            donusumler["son_dusus"] = {"degisim_yuzde": ((son_5 - ilk_5) / ilk_5) * 100, "yon": "asagi"}
+        if son_5 > ilk_5 * 1.02:
+            trend = "yukselis"
+        elif son_5 < ilk_5 * 0.98:
+            trend = "dusus"
 
+    # Destek ve direnc seviyeleri
     son_20 = close.tail(20)
-    donusumler["aktif_destek"] = float(son_20.min())
-    donusumler["aktif_direnc"] = float(son_20.max())
-    donusumler["simdiki_fiyat"] = float(close.iloc[-1])
+    aktif_destek = float(son_20.min())
+    aktif_direnc = float(son_20.max())
+    simdiki_fiyat = float(close.iloc[-1])
 
-    fiyat = donusumler["simdiki_fiyat"]
-    donusumler["destek_mesafe_yuzde"] = ((fiyat - donusumler["aktif_destek"]) / fiyat) * 100 if fiyat != 0 else 0
-    donusumler["direnc_mesafe_yuzde"] = ((donusumler["aktif_direnc"] - fiyat) / fiyat) * 100 if fiyat != 0 else 0
+    # Sinyal
+    sinyal = None
+    destek_mesafe = ((simdiki_fiyat - aktif_destek) / simdiki_fiyat) * 100 if simdiki_fiyat != 0 else 0
+    direnc_mesafe = ((aktif_direnc - simdiki_fiyat) / simdiki_fiyat) * 100 if simdiki_fiyat != 0 else 0
 
-    donusumler["sinyal"] = None
-    if donusumler["destek_mesafe_yuzde"] < 1.5:
-        donusumler["sinyal"] = "🟢 AL (Destek yakınında)"
-    elif donusumler["direnc_mesafe_yuzde"] < 1.5:
-        donusumler["sinyal"] = "🔴 SAT (Direnç yakınında)"
+    if destek_mesafe < 2:
+        sinyal = "AL"
+    elif direnc_mesafe < 2:
+        sinyal = "SAT"
 
-    st.session_state.seviyeler[sembol] = donusumler
+    donusumler = {
+        "yukselis_noktalari": yukselis_noktalari,
+        "dusus_noktalari": dusus_noktalari,
+        "son_donusum": son_donusum,
+        "trend": trend,
+        "aktif_destek": aktif_destek,
+        "aktif_direnc": aktif_direnc,
+        "simdiki_fiyat": simdiki_fiyat,
+        "destek_mesafe": destek_mesafe,
+        "direnc_mesafe": direnc_mesafe,
+        "sinyal": sinyal
+    }
+
+    st.session_state.donusum_noktalari[sembol] = donusumler
     return donusumler
 
+
 # ============================================
-# VERİ KAYNAKLARI
+# VERI KAYNAKLARI
 # ============================================
 @dataclass
 class VeriPaketi:
@@ -201,11 +284,11 @@ class YahooFinanceKaynagi(VeriKaynagi):
             else:
                 df = ticker.history(period="6mo", interval=interval)
             if df.empty:
-                raise ValueError("Veri bulunamadı")
+                raise ValueError("Veri bulunamadi")
             return VeriPaketi(sembol=sembol, kaynak=self.isim, zaman_dilimi=periyot,
                               veri=df, gecikme="15dk gecikme", son_guncelleme=datetime.now())
         except Exception as e:
-            raise Exception(f"Yahoo Finance hatası: {e}")
+            raise Exception(f"Yahoo Finance hatasi: {e}")
 
 class AlphaVantageKaynagi(VeriKaynagi):
     def __init__(self, api_key):
@@ -246,14 +329,14 @@ class AlphaVantageKaynagi(VeriKaynagi):
             return VeriPaketi(sembol=sembol, kaynak=self.isim, zaman_dilimi=periyot,
                               veri=df, gecikme="15dk gecikme", son_guncelleme=datetime.now())
         except Exception as e:
-            raise Exception(f"Alpha Vantage hatası: {e}")
+            raise Exception(f"Alpha Vantage hatasi: {e}")
 
 class TwelveDataKaynagi(VeriKaynagi):
     def __init__(self, api_key):
         self.api_key = api_key
         self.base_url = "https://api.twelvedata.com"
         self.isim = "Twelve Data"
-        self.gecikme = "15dk gecikme (ücretsiz)"
+        self.gecikme = "15dk gecikme (ucretsiz)"
 
     def destekler(self, sembol):
         return True
@@ -274,12 +357,12 @@ class TwelveDataKaynagi(VeriKaynagi):
             df.set_index('datetime', inplace=True)
             df = df.sort_index().astype(float)
             return VeriPaketi(sembol=sembol, kaynak=self.isim, zaman_dilimi=periyot,
-                              veri=df, gecikme="15dk gecikme (ücretsiz)", son_guncelleme=datetime.now())
+                              veri=df, gecikme="15dk gecikme (ucretsiz)", son_guncelleme=datetime.now())
         except Exception as e:
-            raise Exception(f"Twelve Data hatası: {e}")
+            raise Exception(f"Twelve Data hatasi: {e}")
 
 # ============================================
-# INVESTING.COM ANLIK VERİ
+# INVESTING.COM ANLIK VERI
 # ============================================
 class InvestingComAnlik:
     def __init__(self):
@@ -324,7 +407,7 @@ class InvestingComAnlik:
 
     def fiyat_cek(self, sembol):
         if sembol not in self.pair_ids:
-            return {"hata": f"Investing.com: {sembol} için pair ID bulunamadı"}
+            return {"hata": f"Investing.com: {sembol} icin pair ID bulunamadi"}
 
         pair_id = self.pair_ids[sembol]
 
@@ -371,15 +454,15 @@ class InvestingComAnlik:
                 except:
                     pass
 
-            return {"hata": "Investing.com'dan veri alınamadı"}
+            return {"hata": "Investing.com'dan veri alinamadi"}
 
         except Exception as e:
-            return {"hata": f"Investing.com hatası: {e}"}
+            return {"hata": f"Investing.com hatasi: {e}"}
 
 class InvestingComKaynagi(VeriKaynagi):
     def __init__(self):
         self.isim = "Investing.com"
-        self.gecikme = "Gerçek zamanlı / 1dk gecikme"
+        self.gecikme = "Gercek zamanli / 1dk gecikme"
         self.anlik = InvestingComAnlik()
 
     def destekler(self, sembol):
@@ -393,12 +476,12 @@ class InvestingComKaynagi(VeriKaynagi):
             paket.gecikme = self.gecikme
             return paket
         except Exception as e:
-            raise Exception(f"Investing.com hatası: {e}")
+            raise Exception(f"Investing.com hatasi: {e}")
 
 class MockVeriKaynagi(VeriKaynagi):
     def __init__(self, seed=42):
         self.isim = "Mock Veri"
-        self.gecikme = "Gerçek zamanlı (simüle)"
+        self.gecikme = "Gercek zamanli (simule)"
         self.seed = seed
 
     def destekler(self, sembol):
@@ -430,7 +513,7 @@ class MockVeriKaynagi(VeriKaynagi):
         df['High'] = df[['Open', 'Close', 'High']].max(axis=1)
         df['Low'] = df[['Open', 'Close', 'Low']].min(axis=1)
         return VeriPaketi(sembol=sembol, kaynak=self.isim, zaman_dilimi=periyot,
-                          veri=df, gecikme="Simüle (test verisi)", son_guncelleme=datetime.now())
+                          veri=df, gecikme="Simule (test verisi)", son_guncelleme=datetime.now())
 
 class AkilliVeriKoordinatoru:
     def __init__(self):
@@ -448,10 +531,11 @@ class AkilliVeriKoordinatoru:
                 return kaynak.veri_cek(sembol, periyot, baslangic, bitis)
             except Exception:
                 continue
-        raise Exception("Tüm veri kaynakları başarısız oldu!")
+        raise Exception("Tum veri kaynaklari basarisiz oldu!")
+
 
 # ============================================
-# ANLIK FİYAT ÇEKME
+# ANLIK FIYAT CEKME
 # ============================================
 @st.cache_data(ttl=30)
 def anlik_fiyat_cek(sembol, alpha_key="", twelve_key=""):
@@ -522,10 +606,10 @@ def anlik_fiyat_cek(sembol, alpha_key="", twelve_key=""):
         except Exception as e:
             hatalar.append(f"Alpha: {e}")
 
-    return {"hata": f"Tüm kaynaklar başarısız: {'; '.join(hatalar)}"}
+    return {"hata": f"Tum kaynaklar basarisiz: {'; '.join(hatalar)}"}
 
 # ============================================
-# ÖZEL İNDİKATÖR YÜKLEME
+# OZEL INDIKATOR YUKLEME
 # ============================================
 def custom_indikator_ekle(isim, kod):
     try:
@@ -539,7 +623,7 @@ def custom_indikator_ekle(isim, kod):
                 break
 
         if func is None:
-            return False, "Fonksiyon bulunamadı. 'def indikator_adi(df, ...)' şeklinde tanımlayın."
+            return False, "Fonksiyon bulunamadi. 'def indikator_adi(df, ...)' seklinde tanimlayin."
 
         st.session_state.custom_indikatorler[isim] = {
             "fonksiyon": func,
@@ -549,7 +633,7 @@ def custom_indikator_ekle(isim, kod):
             "tip": "cizgi",
             "panel": "ana"
         }
-        return True, f"✅ '{isim}' indikatörü eklendi!"
+        return True, f"✅ '{isim}' indikatoru eklendi!"
     except Exception as e:
         return False, f"❌ Hata: {e}"
 
@@ -559,28 +643,29 @@ def custom_indikator_sil(isim):
         return True
     return False
 
+
 # ============================================
 # STREAMLIT UI
 # ============================================
 def main():
-    st.title("📊 Çok Kaynaklı Finans Veri Ajanı")
-    st.markdown("**Investing.com → Twelve Data → Alpha Vantage → Yahoo Finance → Mock** sırasıyla en güvenilir veriyi bulur.")
+    st.title("📊 Cok Kaynakli Finans Veri Ajani")
+    st.markdown("**Investing.com → Twelve Data → Alpha Vantage → Yahoo Finance → Mock** sirasiyla en guvenilir veriyi bulur.")
 
     with st.sidebar:
         st.header("⚙️ Ayarlar")
 
-        with st.expander("🔑 API Anahtarları", expanded=False):
+        with st.expander("🔑 API Anahtarlari", expanded=False):
             alpha_key = st.text_input("Alpha Vantage API Key", type="password")
             twelve_key = st.text_input("Twelve Data API Key", type="password")
 
         periyot = st.selectbox("Zaman Dilimi",
                               ["1d", "1h", "15m", "5m", "1m"],
-                              format_func=lambda x: {"1d": "📅 Günlük", "1h": "🕐 Saatlik",
+                              format_func=lambda x: {"1d": "📅 Gunluk", "1h": "🕐 Saatlik",
                                                      "15m": "⏱️ 15 Dakika", "5m": "⏱️ 5 Dakika", "1m": "⏱️ 1 Dakika"}[x])
 
         st.divider()
 
-        st.subheader("📈 Temel İndikatörler")
+        st.subheader("📈 Temel Indikatorler")
         ind_col1, ind_col2 = st.columns(2)
         with ind_col1:
             st.session_state.indikatorler["sma_20"]["aktif"] = st.checkbox("SMA 20", value=st.session_state.indikatorler["sma_20"]["aktif"])
@@ -593,14 +678,13 @@ def main():
 
         st.divider()
 
-        st.subheader("➕ Özel İndikatör Ekle")
-        with st.expander("Yeni İndikatör", expanded=False):
-            yeni_isim = st.text_input("İndikatör Adı", placeholder="ornek_indikator", key="custom_name")
+        st.subheader("➕ Ozel Indikator Ekle")
+        with st.expander("Yeni Indikator", expanded=False):
+            yeni_isim = st.text_input("Indikator Adi", placeholder="ornek_indikator", key="custom_name")
 
-            # Üçlü tırnak sorununu önlemek için escape kullan
-            ornek_kod = "def my_indicator(df, period=14):\n    close = df['Close']\n    return close.rolling(window=period).mean()"
+            ornek_kodu = "def my_indicator(df, period=14):\n    close = df['Close']\n    return close.rolling(window=period).mean()"
+            yeni_kod = st.text_area("Python Kodu", height=200, value=ornek_kodu, key="custom_code")
 
-            yeni_kod = st.text_area("Python Kodu", height=200, value=ornek_kod, key="custom_code")
             col_a, col_b = st.columns(2)
             with col_a:
                 if st.button("💾 Kaydet", use_container_width=True, key="btn_save_custom"):
@@ -612,13 +696,13 @@ def main():
                         else:
                             st.error(msg)
                     else:
-                        st.warning("İsim ve kod gerekli!")
+                        st.warning("Isim ve kod gerekli!")
             with col_b:
                 st.button("🧪 Test Et", use_container_width=True, key="btn_test_custom", disabled=True)
 
         if st.session_state.custom_indikatorler:
             st.markdown("---")
-            st.caption("📌 Özel İndikatörlerim:")
+            st.caption("📌 Ozel Indikatorlerim:")
             for isim, ind in list(st.session_state.custom_indikatorler.items()):
                 col_x, col_y = st.columns([3, 1])
                 with col_x:
@@ -631,10 +715,10 @@ def main():
         st.divider()
 
         st.subheader("📋 Takip Listem")
-        with st.expander("➕ Varlık Ekle", expanded=False):
+        with st.expander("➕ Varlik Ekle", expanded=False):
             tur_secimi = st.selectbox("Kategori", list(VARLIK_KUTUPHANESI.keys()), key="add_cat")
             varliklar = VARLIK_KUTUPHANESI[tur_secimi]
-            varlik_secimi = st.selectbox("Varlık", varliklar, format_func=lambda x: f"{x[0]} - {x[1]}", key="add_var")
+            varlik_secimi = st.selectbox("Varlik", varliklar, format_func=lambda x: f"{x[0]} - {x[1]}", key="add_var")
             if st.button("Listeye Ekle", use_container_width=True, key="btn_add"):
                 mevcut_semboller = [v["sembol"] for v in st.session_state.takip_listesi]
                 if varlik_secimi[0] not in mevcut_semboller:
@@ -660,9 +744,9 @@ def main():
         st.divider()
         use_mock = st.checkbox("🧪 Mock Veri Kullan (Test)", value=False)
 
-    # ==================== ANA İÇERİK ====================
+    # ==================== ANA ICERIK ====================
 
-    st.subheader("💰 Anlık Piyasa Verileri")
+    st.subheader("💰 Anlik Piyasa Verileri")
     aktif_varliklar = [v for v in st.session_state.takip_listesi if v.get("aktif", True)]
 
     if aktif_varliklar:
@@ -677,7 +761,7 @@ def main():
                         veri = anlik_fiyat_cek(varlik["sembol"], alpha_key, twelve_key)
 
                     if veri.get("hata"):
-                        st.error(f"❌ {varlik['sembol']}: Veri alınamadı")
+                        st.error(f"❌ {varlik['sembol']}: Veri alinamadi")
                     else:
                         fiyat = veri["fiyat"]
                         degisim = veri["degisim"]
@@ -692,22 +776,22 @@ def main():
                             delta=f"{isaret}{degisim_yuzde:.2f}% ({isaret}{degisim:,.4f})" if fiyat < 1 else f"{isaret}{degisim_yuzde:.2f}% ({isaret}{degisim:,.2f})",
                             delta_color="normal"
                         )
-                        st.caption(f"📡 {kaynak} | Hacim: {veri['hacim']:,} | Yüksek: {veri['yuksek']:.2f} | Düşük: {veri['dusuk']:.2f}")
+                        st.caption(f"📡 {kaynak} | Hacim: {veri['hacim']:,} | Yuksek: {veri['yuksek']:.2f} | Dusuk: {veri['dusuk']:.2f}")
     else:
-        st.info("📭 Takip listeniz boş. Sidebar'dan varlık ekleyin.")
+        st.info("📭 Takip listeniz bos. Sidebar'dan varlik ekleyin.")
 
     st.divider()
 
-    st.subheader("📊 Detaylı Grafik")
+    st.subheader("📊 Detayli Grafik")
     secenekler = [(v["sembol"], f"{v['isim']} ({v['sembol']})") for v in st.session_state.takip_listesi]
     if secenekler:
-        secili = st.selectbox("Grafik için sembol seç", secenekler, format_func=lambda x: x[1])
+        secili = st.selectbox("Grafik icin sembol sec", secenekler, format_func=lambda x: x[1])
         secili_sembol = secili[0]
     else:
-        secili_sembol = st.text_input("Sembol girin (örn: AAPL)", value="AAPL")
+        secili_sembol = st.text_input("Sembol girin (orn: AAPL)", value="AAPL")
 
-    if st.button("🚀 Grafiği Çiz", type="primary", use_container_width=True):
-        with st.spinner("Tüm kaynaklar deneniyor..."):
+    if st.button("🚀 Grafigi Ciz", type="primary", use_container_width=True):
+        with st.spinner("Tum kaynaklar deneniyor..."):
             koordinator = AkilliVeriKoordinatoru()
             koordinator.kaynak_ekle(InvestingComKaynagi(), 1)
             if twelve_key:
@@ -725,36 +809,41 @@ def main():
                 col1, col2, col3, col4 = st.columns(4)
                 col1.metric("📡 Kaynak", paket.kaynak)
                 col2.metric("⏱️ Gecikme", paket.gecikme)
-                col3.metric("📊 Veri Sayısı", f"{len(df)} satır")
-                col4.metric("💵 Son Kapanış", f"{df['Close'].iloc[-1]:.4f}" if df['Close'].iloc[-1] < 1 else f"{df['Close'].iloc[-1]:.2f}")
+                col3.metric("📊 Veri Sayisi", f"{len(df)} satir")
+                col4.metric("💵 Son Kapanis", f"{df['Close'].iloc[-1]:.4f}" if df['Close'].iloc[-1] < 1 else f"{df['Close'].iloc[-1]:.2f}")
 
-                st.success(f"✅ {paket.kaynak} üzerinden veri alındı!")
+                st.success(f"✅ {paket.kaynak} uzerinden veri alindi!")
 
-                with st.spinner("Dönüşüm seviyeleri analiz ediliyor..."):
-                    donusumler = donusum_seviyeleri_bul(df, secili_sembol)
+                # Donusum noktalari analizi
+                with st.spinner("Donusum noktalari analiz ediliyor..."):
+                    donusumler = donusum_noktalari_bul(df, secili_sembol)
 
+                # Donusum seviyeleri kartlari
                 seviye_col1, seviye_col2, seviye_col3, seviye_col4 = st.columns(4)
                 simdiki = donusumler["simdiki_fiyat"]
                 destek = donusumler["aktif_destek"]
                 direnc = donusumler["aktif_direnc"]
 
-                seviye_col1.metric("📍 Şimdiki Fiyat", f"{simdiki:.2f}")
-                seviye_col2.metric("🟢 Destek", f"{destek:.2f}", delta=f"-{donusumler['destek_mesafe_yuzde']:.1f}%", delta_color="inverse")
-                seviye_col3.metric("🔴 Direnç", f"{direnc:.2f}", delta=f"+{donusumler['direnc_mesafe_yuzde']:.1f}%", delta_color="inverse")
+                seviye_col1.metric("📍 Simdiki Fiyat", f"{simdiki:.2f}")
+                seviye_col2.metric("🟢 Destek", f"{destek:.2f}", delta=f"-{donusumler['destek_mesafe']:.1f}%", delta_color="inverse")
+                seviye_col3.metric("🔴 Direnc", f"{direnc:.2f}", delta=f"+{donusumler['direnc_mesafe']:.1f}%", delta_color="inverse")
 
                 if donusumler.get("sinyal"):
-                    seviye_col4.markdown(f"### {donusumler['sinyal']}")
+                    sinyal_renk = {"AL": "🟢", "SAT": "🔴"}
+                    seviye_col4.markdown(f"### {sinyal_renk.get(donusumler['sinyal'], '⚪')} {donusumler['sinyal']}")
                 else:
-                    seviye_col4.metric("⚖️ Durum", "Nötr")
+                    seviye_col4.metric("⚖️ Durum", "Notr")
 
-                if donusumler.get("son_yukselis"):
-                    y = donusumler["son_yukselis"]
-                    st.info(f"📈 Son yükseliş: %{y['degisim_yuzde']:.2f}")
-                elif donusumler.get("son_dusus"):
-                    d = donusumler["son_dusus"]
-                    st.warning(f"📉 Son düşüş: %{d['degisim_yuzde']:.2f}")
+                # Trend bilgisi
+                trend_emoji = {"yukselis": "📈", "dusus": "📉", "notr": "⚖️"}
+                st.info(f"{trend_emoji.get(donusumler['trend'], '⚪')} Mevcut Trend: {donusumler['trend'].upper()}")
 
-                # Grafik çizimi
+                # Donusum noktalari ozeti
+                yukselis_sayisi = len(donusumler["yukselis_noktalari"])
+                dusus_sayisi = len(donusumler["dusus_noktalari"])
+                st.caption(f"📊 Tespit Edilen: {yukselis_sayisi} yukselis noktasi, {dusus_sayisi} dusus noktasi")
+
+                # Grafik cizimi
                 alt_grafikler = []
                 if st.session_state.indikatorler["rsi"]["aktif"]:
                     alt_grafikler.append("rsi")
@@ -772,13 +861,37 @@ def main():
                     subplot_titles=[f"{secili_sembol} - {periyot}"] + alt_grafikler
                 )
 
+                # Candlestick
                 fig.add_trace(go.Candlestick(
                     x=df.index, open=df['Open'], high=df['High'], low=df['Low'], close=df['Close'],
                     name=secili_sembol, increasing_line_color='#26a69a', decreasing_line_color='#ef5350'
                 ), row=1, col=1)
 
-                fig.add_hline(y=destek, line_dash="dash", line_color="green", annotation_text=f"Destek: {destek:.2f}", row=1, col=1)
-                fig.add_hline(y=direnc, line_dash="dash", line_color="red", annotation_text=f"Direnç: {direnc:.2f}", row=1, col=1)
+                # Destek ve Direnc cizgileri
+                fig.add_hline(y=destek, line_dash="dash", line_color="green", 
+                             annotation_text=f"Destek: {destek:.2f}", row=1, col=1)
+                fig.add_hline(y=direnc, line_dash="dash", line_color="red",
+                             annotation_text=f"Direnc: {direnc:.2f}", row=1, col=1)
+
+                # Donusum noktalari - yukselis (yesil oklar)
+                for nokta in donusumler["yukselis_noktalari"][-5:]:
+                    fig.add_trace(go.Scatter(
+                        x=[nokta["tarih"]], y=[nokta["fiyat"]],
+                        mode='markers',
+                        marker=dict(symbol='arrow-up', size=15, color='green'),
+                        name=f"📈 Yukselis {nokta['tarih'].strftime('%m-%d')}",
+                        showlegend=False
+                    ), row=1, col=1)
+
+                # Donusum noktalari - dusus (kirmizi oklar)
+                for nokta in donusumler["dusus_noktalari"][-5:]:
+                    fig.add_trace(go.Scatter(
+                        x=[nokta["tarih"]], y=[nokta["fiyat"]],
+                        mode='markers',
+                        marker=dict(symbol='arrow-down', size=15, color='red'),
+                        name=f"📉 Dusus {nokta['tarih'].strftime('%m-%d')}",
+                        showlegend=False
+                    ), row=1, col=1)
 
                 close = df['Close']
 
@@ -796,11 +909,11 @@ def main():
 
                 if st.session_state.indikatorler["bollinger"]["aktif"]:
                     ust, orta, alt = bollinger(close, 20, 2)
-                    fig.add_trace(go.Scatter(x=df.index, y=ust, mode='lines', name="BB Üst", line=dict(color="#20B2AA", width=1, dash='dash')), row=1, col=1)
+                    fig.add_trace(go.Scatter(x=df.index, y=ust, mode='lines', name="BB Ust", line=dict(color="#20B2AA", width=1, dash='dash')), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df.index, y=alt, mode='lines', name="BB Alt", line=dict(color="#20B2AA", width=1, dash='dash'), fill='tonexty', fillcolor="rgba(32, 178, 170, 0.1)"), row=1, col=1)
                     fig.add_trace(go.Scatter(x=df.index, y=orta, mode='lines', name="BB Orta", line=dict(color="#20B2AA", width=1.5)), row=1, col=1)
 
-                # Özel indikatörler (ana panel)
+                # Ozel indikatorler (ana panel)
                 for isim, ind in st.session_state.custom_indikatorler.items():
                     if ind.get("aktif") and ind.get("panel", "ana") == "ana":
                         try:
@@ -808,7 +921,7 @@ def main():
                             if isinstance(sonuc, pd.Series):
                                 fig.add_trace(go.Scatter(x=df.index, y=sonuc, mode='lines', name=f"🔧 {isim}", line=dict(color=ind.get("color", "#FFD700"), width=1.5)), row=1, col=1)
                         except Exception as e:
-                            st.warning(f"🔧 {isim} indikatörü çalıştırılamadı: {e}")
+                            st.warning(f"🔧 {isim} indikatoru calistirilamadi: {e}")
 
                 if 'Volume' in df.columns:
                     fig.add_trace(go.Bar(x=df.index, y=df['Volume'], name="Hacim", marker_color='rgba(100, 100, 100, 0.3)'), row=1, col=1)
@@ -855,7 +968,7 @@ def main():
                                 dict(method="relayout", label="1A", args=[{"xaxis.range": [df.index[-1] - pd.Timedelta(days=30), df.index[-1]]}]),
                                 dict(method="relayout", label="3A", args=[{"xaxis.range": [df.index[-1] - pd.Timedelta(days=90), df.index[-1]]}]),
                                 dict(method="relayout", label="6A", args=[{"xaxis.range": [df.index[-1] - pd.Timedelta(days=180), df.index[-1]]}]),
-                                dict(method="relayout", label="Tümü", args=[{"xaxis.autorange": True}]),
+                                dict(method="relayout", label="Tumu", args=[{"xaxis.autorange": True}]),
                             ],
                             pad={"r": 10, "t": 10},
                             showactive=True,
@@ -868,7 +981,7 @@ def main():
                             type="buttons",
                             direction="left",
                             buttons=[
-                                dict(method="relayout", args=[{"xaxis.autorange": True, "yaxis.autorange": True}], label="↔️ Sıfırla"),
+                                dict(method="relayout", args=[{"xaxis.autorange": True, "yaxis.autorange": True}], label="↔️ Sifirla"),
                             ],
                             pad={"r": 10, "t": 10},
                             x=0.55,
@@ -885,27 +998,30 @@ def main():
                     'modeBarButtonsToAdd': ['drawline', 'drawopenpath', 'eraseshape'],
                 })
 
-                with st.expander("📋 Ham Veriyi Gör"):
+                with st.expander("📋 Ham Veriyi Gor"):
                     st.dataframe(df.tail(50), use_container_width=True)
 
-                with st.expander("📈 İstatistikler"):
+                with st.expander("📈 Istatistikler"):
                     st.write(df.describe())
 
-                with st.expander("🎯 Destek/Direnç Seviyeleri Detayı"):
-                    st.write(f"**Son 20 bar Destek:** {destek:.4f}")
-                    st.write(f"**Son 20 bar Direnç:** {direnc:.4f}")
-                    st.write(f"**Destek Mesafe:** %{donusumler['destek_mesafe_yuzde']:.2f}")
-                    st.write(f"**Direnç Mesafe:** %{donusumler['direnc_mesafe_yuzde']:.2f}")
-                    if donusumler["direncler"]:
-                        st.write("**Tespit Edilen Dirençler:**")
-                        for d in donusumler["direncler"][-5:]:
-                            st.write(f"  📈 {d['tarih'].strftime('%Y-%m-%d')}: {d['fiyat']:.2f}")
-                    if donusumler["destekler"]:
-                        st.write("**Tespit Edilen Destekler:**")
-                        for d in donusumler["destekler"][-5:]:
-                            st.write(f"  📉 {d['tarih'].strftime('%Y-%m-%d')}: {d['fiyat']:.2f}")
+                with st.expander("🎯 Donusum Noktalari Detayi"):
+                    col_y, col_d = st.columns(2)
+                    with col_y:
+                        st.markdown("**📈 Yukselis Noktalari (Son 5)**")
+                        for nokta in donusumler["yukselis_noktalari"][-5:]:
+                            st.write(f"  {nokta['tarih'].strftime('%Y-%m-%d')}: {nokta['fiyat']:.2f}")
+                    with col_d:
+                        st.markdown("**📉 Dusus Noktalari (Son 5)**")
+                        for nokta in donusumler["dusus_noktalari"][-5:]:
+                            st.write(f"  {nokta['tarih'].strftime('%Y-%m-%d')}: {nokta['fiyat']:.2f}")
 
-                st.caption(f"Son güncelleme: {paket.son_guncelleme.strftime('%Y-%m-%d %H:%M:%S')}")
+                    st.markdown("---")
+                    st.write(f"**Son 20 bar Destek:** {destek:.4f}")
+                    st.write(f"**Son 20 bar Direnc:** {direnc:.4f}")
+                    st.write(f"**Destek Mesafe:** %{donusumler['destek_mesafe']:.2f}")
+                    st.write(f"**Direnc Mesafe:** %{donusumler['direnc_mesafe']:.2f}")
+
+                st.caption(f"Son guncelleme: {paket.son_guncelleme.strftime('%Y-%m-%d %H:%M:%S')}")
 
             except Exception as e:
                 st.error(f"❌ Hata: {e}")
@@ -913,7 +1029,7 @@ def main():
                 st.code(traceback.format_exc())
 
     st.divider()
-    st.caption("🔧 Çok Kaynaklı Finans Veri Ajanı v4.0 | Investing.com + Özel İndikatörler + Dönüşüm Seviyeleri")
+    st.caption("🔧 Cok Kaynakli Finans Veri Ajani v5.0 | Investing.com + Ozel Indikatorler + Donusum Noktalari")
 
 if __name__ == "__main__":
     main()
